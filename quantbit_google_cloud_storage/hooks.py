@@ -246,7 +246,23 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
+doc_events = {
+	"Data Import": {
+		"on_update": "quantbit_google_cloud_storage.cloud.delete_file_after_import"
+	}
+}
 
 write_file = "quantbit_google_cloud_storage.cloud.upload_file_to_gcs"
 delete_file_data_content = "quantbit_google_cloud_storage.cloud.delete_file_from_gcs"
+
+# apps/quantbit_google_cloud_storage/quantbit_google_cloud_storage/hooks.py
+
+# apps/quantbit_google_cloud_storage/quantbit_google_cloud_storage/hooks.py
+
+override_doctype_class = {
+	"File": "quantbit_google_cloud_storage.cloud.CustomFileOverride"
+}
+
+# apps/quantbit_google_cloud_storage/quantbit_google_cloud_storage/hooks.py
+
+
