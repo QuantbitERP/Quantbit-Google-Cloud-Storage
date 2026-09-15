@@ -92,11 +92,14 @@ def upload_file_to_gcs(*args, **kwargs):
 	if not fname or content is None:
 		frappe.throw(_("Missing file name or content for GCS upload"))
 
-	parts = [p.strip().replace(" ", "-") for p in (attached_to_doctype, attached_to_name) if p]
-	if parts:
-		prefix = "-".join(parts)
-		if not fname.startswith(f"{prefix}-"):
-			fname = f"{prefix}-{fname}"
+	is_data_import = (attached_to_doctype and attached_to_doctype.strip() == "Data Import") or (frappe.form_dict.get("doctype") == "Data Import")
+
+	if not is_data_import:
+		parts = [p.strip().replace(" ", "-") for p in (attached_to_doctype, attached_to_name) if p]
+		if parts:
+			prefix = "-".join(parts)
+			if not fname.startswith(f"{prefix}-"):
+				fname = f"{prefix}-{fname}"
 
 	try:
 		client = get_s3_client()
