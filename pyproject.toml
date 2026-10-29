@@ -7,7 +7,10 @@ description = "Google Cloud Storage / Cloudflare R2 integration for Frappe"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+    "boto3",
+]
+
 
 [build-system]
 requires = ["flit_core>=3.4,<4"]

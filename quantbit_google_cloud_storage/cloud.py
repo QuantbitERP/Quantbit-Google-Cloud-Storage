@@ -48,6 +48,27 @@ def get_bucket_name():
 # CORE STOCK HOOK REPLACEMENTS (WRITE / DELETE)
 # ==========================================
 
+def is_repost_item_valuation_gz(fname=None, attached_to_doctype=None, attached_to_field=None):
+	"""
+	Returns True if the file is a .gz attachment created for the Repost Item Valuation doctype.
+	Such files must remain stored locally on the filesystem and not uploaded to cloud storage.
+	"""
+	if not fname or not fname.lower().endswith(".gz"):
+		return False
+
+	doc_type = (attached_to_doctype or "").strip().lower()
+	if doc_type in ("repost item valuation", "reposting item valuation"):
+		return True
+
+	if attached_to_field == "reposting_data_file":
+		return True
+
+	cleaned_name = fname.lower()
+	if cleaned_name.startswith(("repost_item_valuation", "reposting_item_valuation")):
+		return True
+
+	return False
+
 def upload_file_to_gcs(*args, **kwargs):
 	"""
 	Uploads a file to Google Cloud Storage (via S3 API).
@@ -62,6 +83,8 @@ def upload_file_to_gcs(*args, **kwargs):
 	is_private = 0
 	attached_to_doctype = None
 	attached_to_name = None
+	attached_to_field = None
+	file_doc = None
 	
 	if len(args) == 1 and hasattr(args[0], "doctype") and args[0].doctype == "File":
 		# Case 1: Called with File document
@@ -72,14 +95,16 @@ def upload_file_to_gcs(*args, **kwargs):
 		is_private = file_doc.is_private
 		attached_to_doctype = file_doc.attached_to_doctype
 		attached_to_name = file_doc.attached_to_name
+		attached_to_field = getattr(file_doc, "attached_to_field", None)
 	elif len(args) >= 2:
 		# Case 2: Called with individual arguments
 		fname = args[0]
 		content = args[1]
 		content_type = args[2] if len(args) > 2 else kwargs.get("content_type")
 		is_private = args[3] if len(args) > 3 else kwargs.get("is_private", 0)
-		attached_to_doctype = frappe.form_dict.get("doctype")
-		attached_to_name = frappe.form_dict.get("docname")
+		attached_to_doctype = kwargs.get("attached_to_doctype") or frappe.form_dict.get("doctype")
+		attached_to_name = kwargs.get("attached_to_name") or frappe.form_dict.get("docname")
+		attached_to_field = kwargs.get("attached_to_field") or frappe.form_dict.get("docfield")
 	else:
 		# Try kwargs
 		fname = kwargs.get("fname")
@@ -88,10 +113,19 @@ def upload_file_to_gcs(*args, **kwargs):
 		is_private = kwargs.get("is_private", 0)
 		attached_to_doctype = kwargs.get("attached_to_doctype") or frappe.form_dict.get("doctype")
 		attached_to_name = kwargs.get("attached_to_name") or frappe.form_dict.get("docname")
+		attached_to_field = kwargs.get("attached_to_field") or frappe.form_dict.get("docfield")
 		
 	if not fname or content is None:
 		frappe.throw(_("Missing file name or content for GCS upload"))
 
+	# Exception for Repost Item Valuation: store .gz files locally instead of uploading to cloud
+	if is_repost_item_valuation_gz(fname, attached_to_doctype, attached_to_field):
+		if file_doc:
+			return file_doc.save_file_on_filesystem()
+		from frappe.utils.file_manager import save_file_on_filesystem
+		return save_file_on_filesystem(fname, content, content_type, is_private)
+
+	# For Data Import, do not use the custom naming series prefix to prevent exceeding Frappe's 140 character limit
 	is_data_import = (attached_to_doctype and attached_to_doctype.strip() == "Data Import") or (frappe.form_dict.get("doctype") == "Data Import")
 
 	if not is_data_import:
@@ -105,6 +139,8 @@ def upload_file_to_gcs(*args, **kwargs):
 		client = get_s3_client()
 		if not client:
 			# If disabled, fallback to local filesystem
+			if file_doc:
+				return file_doc.save_file_on_filesystem()
 			from frappe.utils.file_manager import save_file_on_filesystem
 			return save_file_on_filesystem(fname, content, content_type, is_private)
 		
@@ -167,6 +203,16 @@ def delete_file_from_gcs(doc, only_thumbnail=False):
 	Hook for: delete_file_data_content
 	"""
 	try:
+		file_url = getattr(doc, "file_url", None)
+		file_name = getattr(doc, "file_name", None)
+		attached_to_doctype = getattr(doc, "attached_to_doctype", None)
+		attached_to_field = getattr(doc, "attached_to_field", None)
+
+		# If the file is stored locally (such as Repost Item Valuation .gz files or any non-remote file), delete from local filesystem
+		if (file_url and not (file_url.startswith("http://") or file_url.startswith("https://"))) or is_repost_item_valuation_gz(file_name, attached_to_doctype, attached_to_field):
+			from frappe.utils.file_manager import delete_file_from_filesystem
+			return delete_file_from_filesystem(doc, only_thumbnail)
+
 		client = get_s3_client()
 		if not client:
 			from frappe.utils.file_manager import delete_file_from_filesystem
